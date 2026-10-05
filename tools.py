@@ -20,7 +20,9 @@ That last line is what your loop branches on. "Returns a list" earns nothing —
 the description has to say what is *in* the list.
 """
 
-import config  # noqa: F401 — you'll use this in search_listings
+import re
+
+import config
 from generate import generate
 from utils.data_loader import load_listings
 
@@ -78,8 +80,79 @@ def search_listings(
     Test it from a terminal before you move on:
         python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
     """
-    # TODO: replace this with your implementation
-    return []
+    listings = load_listings()
+
+    if max_price is not None:
+        listings = [l for l in listings if l["price"] <= max_price]
+
+    if size:
+        listings = [l for l in listings if _size_matches(size, l["size"])]
+
+    keywords = description.lower().split()
+    scored = []
+    for listing in listings:
+        text = _searchable_text(listing)
+        score = sum(1 for word in keywords if word in text)
+        if score > 0:
+            scored.append((score, listing))
+
+    # sorted() is stable, so ties keep the order they have in the file.
+    scored = sorted(scored, key=lambda pair: pair[0], reverse=True)
+    return [listing for _, listing in scored[: config.SEARCH_RESULT_LIMIT]]
+
+
+def _searchable_text(listing: dict) -> str:
+    """Every field a keyword can match, lowercased into one string."""
+    parts = [
+        listing["title"],
+        listing["description"],
+        listing["category"],
+        " ".join(listing["style_tags"]),
+        " ".join(listing["colors"]),
+        listing["brand"] or "",  # brand is None for most listings
+    ]
+    return " ".join(parts).lower()
+
+
+def _size_matches(wanted: str, listing_size: str) -> bool:
+    """
+    The size rule from the Tool Inventory. Lowercase both, drop parenthesised
+    notes, split the listing size on "/", and match a whole part or a part's
+    first word. "One size" listings match every request.
+
+        "M"  matches "S/M", "M/L"      "L"   does not match "XL"
+        "W30" matches "W30 L30"        "S"   does not match "US 9"
+    """
+    wanted = " ".join(wanted.lower().split())
+    cleaned = re.sub(r"\(.*?\)", "", listing_size.lower())
+    parts = [" ".join(p.split()) for p in cleaned.split("/") if p.strip()]
+
+    for part in parts:
+        if part == "one size":
+            return True
+        if wanted == part or wanted == part.split()[0]:
+            return True
+    return False
+
+
+def _price(listing: dict) -> str:
+    """$24 rather than $24.0; $24.50 stays as it is."""
+    return f"${listing['price']:.2f}".replace(".00", "")
+
+
+def _describe(listing: dict) -> str:
+    """The item, as a few lines the model can read."""
+    lines = [
+        f"Title: {listing['title']}",
+        f"Category: {listing['category']}",
+        f"Colors: {', '.join(listing['colors'])}",
+        f"Style: {', '.join(listing['style_tags'])}",
+        f"Condition: {listing['condition']}",
+        f"Size: {listing['size']}",
+    ]
+    if listing["brand"]:
+        lines.append(f"Brand: {listing['brand']}")
+    return "\n".join(lines)
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
@@ -112,8 +185,34 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     Test it from a terminal before you move on:
         python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
     """
-    # TODO: replace this with your implementation
-    return ""
+    items = wardrobe.get("items") or []
+    system = (
+        "You are a stylist helping someone decide whether a thrifted piece "
+        "works for them. Be concrete and brief. Plain text, no markdown headers."
+    )
+
+    if not items:
+        prompt = (
+            f"Here is a thrifted item:\n{_describe(new_item)}\n\n"
+            "The user hasn't saved any wardrobe items. Suggest one or two outfits "
+            "built around this item using common, easy-to-find pieces. Do not "
+            "refer to anything as if the user already owns it."
+        )
+    else:
+        owned = "\n".join(
+            f"- {item['name']} ({item['category']}; {', '.join(item['colors'])})"
+            for item in items
+        )
+        prompt = (
+            f"Here is a thrifted item:\n{_describe(new_item)}\n\n"
+            f"The user already owns:\n{owned}\n\n"
+            "Suggest one or two outfits that pair this item with pieces from "
+            "that list. Name each owned piece exactly as it's written above."
+        )
+
+    suggestion = generate(prompt, system=system).strip()
+    # The spec promises a non-empty string, even if the model sends nothing.
+    return suggestion or f"Style the {new_item['title']} with simple basics in neutral colors."
 
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
@@ -152,5 +251,22 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
     Test it from a terminal before you move on:
         python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
     """
-    # TODO: replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return "Can't write a fit card without an outfit suggestion."
+
+    system = (
+        "You write short social media captions about thrift finds. They sound "
+        "like a real person posting, not a product listing."
+    )
+    prompt = (
+        f"The find:\n{_describe(new_item)}\n"
+        f"Price: {_price(new_item)}\n"
+        f"Platform: {new_item['platform']}\n\n"
+        f"How they're styling it:\n{outfit}\n\n"
+        "Write a caption of 2 to 4 sentences. Mention the item, the price written "
+        f"exactly as {_price(new_item)}, and the platform name, once each. Be "
+        "specific about the vibe of this outfit. Open with something particular "
+        "to this item, not a generic opener. Plain text, at most two emojis, "
+        "no hashtags. Return only the caption."
+    )
+    return generate(prompt, system=system).strip()
