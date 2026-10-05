@@ -13,6 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
@@ -107,9 +109,131 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     """
     session = new_session(query, wardrobe)
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    # Each pass runs one step, then picks the next step from what that step
+    # put in the session. Every tool reads its inputs back out of the session.
+    next_step = "parse"
+    count = 0
+    while next_step != "done":
+        count += 1
+        trace.check_iterations(count)
+
+        if next_step == "parse":
+            session["parsed"] = parse_query(session["query"])
+            next_step = "search"
+
+        elif next_step == "search":
+            parsed = session["parsed"]
+            session["search_results"] = search_listings(
+                parsed["description"], parsed["size"], parsed["max_price"]
+            )
+            # THE BRANCH: nothing found → explain what to change, and stop.
+            if not session["search_results"]:
+                session["error"] = _no_results_message(parsed)
+                next_step = "done"
+            else:
+                session["selected_item"] = session["search_results"][0]
+                next_step = "suggest"
+
+        elif next_step == "suggest":
+            session["outfit_suggestion"] = suggest_outfit(
+                session["selected_item"], session["wardrobe"]
+            )
+            next_step = "card"
+
+        elif next_step == "card":
+            session["fit_card"] = create_fit_card(
+                session["outfit_suggestion"], session["selected_item"]
+            )
+            next_step = "done"
+
     return session
+
+
+# ── query parsing ─────────────────────────────────────────────────────────────
+
+# Words that carry no meaning for search. They matter more than they look:
+# search_listings matches keywords as substrings, so "a" or "in" left in the
+# description would match every listing.
+_FILLER = {
+    "a", "an", "the", "i", "im", "i'm", "me", "my", "for", "in", "on", "of",
+    "with", "and", "or", "to", "some", "something", "any", "looking", "want",
+    "need", "find", "get", "show", "please", "like", "that", "is", "it",
+}
+
+_PRICE = re.compile(
+    r"(?:under|below|less than|max|up to|at most|<)?\s*\$\s*(\d+(?:\.\d+)?)"
+    r"|(?:under|below|less than|up to|at most)\s+(\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_SIZE = re.compile(
+    r"\bsize\s+(us\s*\d+(?:\.\d+)?|w\d+(?:\s*l\d+)?|one size|[a-z0-9.]+)",
+    re.IGNORECASE,
+)
+
+
+def parse_query(query: str) -> dict:
+    """
+    Pull a description, a size and a max_price out of plain language, by regex.
+
+        "vintage graphic tee under $30"  → {"description": "vintage graphic tee",
+                                            "size": None, "max_price": 30.0}
+        "platform sneakers size 8"       → {"description": "platform sneakers",
+                                            "size": "US 8", "max_price": None}
+
+    A bare number size of 15 or under is read as a US shoe size, because that
+    is how the shoes in the data are sized ("US 8").
+    """
+    text = query
+
+    max_price = None
+    price_match = _PRICE.search(text)
+    if price_match:
+        max_price = float(price_match.group(1) or price_match.group(2))
+        text = text[: price_match.start()] + " " + text[price_match.end():]
+
+    size = None
+    size_match = _SIZE.search(text)
+    if size_match:
+        size = size_match.group(1).strip()
+        if re.fullmatch(r"\d+(\.\d+)?", size) and float(size) <= 15:
+            size = f"US {size}"
+        text = text[: size_match.start()] + " " + text[size_match.end():]
+
+    words = re.findall(r"[a-z0-9'-]+", text.lower())
+    description = " ".join(w for w in words if w not in _FILLER)
+
+    return {"description": description, "size": size, "max_price": max_price}
+
+
+def _no_results_message(parsed: dict) -> str:
+    """
+    Tell the user what to change, not just that nothing came back. Checks
+    whether the words match anything at all with the filters removed, so the
+    message can say which part of the query is the problem.
+    """
+    asked = f"'{parsed['description']}'"
+    if parsed["size"]:
+        asked += f" in size {parsed['size']}"
+    if parsed["max_price"] is not None:
+        asked += f" under ${parsed['max_price']:g}"
+
+    if not parsed["description"] or not search_listings(parsed["description"]):
+        return (
+            f"Nothing matched {asked}. None of the listings mention those words "
+            f"at all, so changing the size or price won't help. Try a more general "
+            f"word for the item, like 'jacket', 'jeans', 'tee' or 'sneakers'."
+        )
+
+    fixes = []
+    if parsed["max_price"] is not None:
+        fixes.append(f"raise the price limit above ${parsed['max_price']:g}")
+    if parsed["size"]:
+        fixes.append(f"drop the size {parsed['size']}")
+    return (
+        f"Nothing matched {asked}. There are listings for "
+        f"'{parsed['description']}', but not with those filters — try to "
+        + " or ".join(fixes) + "."
+    )
 
 
 # ── running it directly ───────────────────────────────────────────────────────

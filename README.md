@@ -106,9 +106,21 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** By regex, in `agent.py::parse_query`, with no model call.
+- **Price:** a `$` amount, optionally after "under", "below", "up to" and similar words (`under $30` → `30.0`), or a bare number after one of those words (`under 40`).
+- **Size:** the word after "size" (`size M` → `M`, `size W30` → `W30`). A bare number of 15 or less becomes a US shoe size (`size 8` → `US 8`), because that's how the shoes in the data are sized.
+- **Description:** what's left after the price and size are removed, minus filler words like "a", "in", "looking" and "for". Removing filler matters because `search_listings` matches substrings, so "a" would match every listing.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** in this order:
+1. `query`, the raw text, set by `new_session`.
+2. `parsed`: `description`, `size`, `max_price`.
+3. `search_results`: the list `search_listings` returned.
+4. Then the branch. On an empty list, `error` is set and the run stops, leaving `selected_item`, `outfit_suggestion` and `fit_card` as `None`. Otherwise:
+5. `selected_item`, which is `search_results[0]`.
+6. `outfit_suggestion`, built from `selected_item` and `wardrobe`.
+7. `fit_card`, built from `outfit_suggestion` and `selected_item`.
+
+Each tool reads its inputs back out of the session, never from the previous call's return value.
 
 ---
 
@@ -122,8 +134,23 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
 
+  Outfit:   Outfit 1:
+Pair the Y2K Baby Tee with the baggy straight-leg jeans, dark wash, vintage black denim jacket, and chunky white sneakers.
+
+Outfit 2:
+Pair the Y2K Baby Tee with the wide-leg khaki trousers, brown leather belt, and black combat boots.
+
+  Fit card: That little butterfly graphic takes me straight back to 2003 in the best way possible. I love how it balances out with oversized dark denim and chunky sneakers for an effortless off-duty look, but it’s just as cute tucked into baggy trousers with combat boots. Snagged this baby tee on depop for $18 and I'm obsessed 🦋
+```
+
+And one the data can't match, which stops at the branch:
+
+```
+$ python app.py ask 'denim jacket size M under $5'
+  Nothing matched 'denim jacket' in size M under $5. There are listings for 'denim jacket', but not with those filters — try to raise the price limit above $5 or drop the size M.
 ```
 
 **The three tools, tested one at a time**
