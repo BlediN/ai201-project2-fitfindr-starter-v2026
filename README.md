@@ -41,6 +41,7 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
+FitFindr helps someone shop secondhand clothing listings (Depop, thredUp and Poshmark) in plain language. You type something like `vintage graphic tee under $30, size M`. The agent pulls out a description, a size and a price ceiling, then searches the listings for the best match. If it finds one, it suggests one or two outfits built from pieces you already own, or general styling ideas if your wardrobe is empty, and writes a short caption you could post about the find. If nothing matches, it stops before the outfit step and tells you which part of your request to change: the words, the size, or the price.
 
 
 ---
@@ -190,15 +191,15 @@ These broken-in vintage Levi's 501 jeans have that perfect authentic fade you ca
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to fill in the Tool Inventory from the stubs in `tools.py`, including the size-matching rule the `search_listings` docstring says I have to decide for myself.
+- *What came back:* Before writing the rule, it counted the actual size values in `listings.json` (`S/M`, `W30 L30`, `US 8.5`, `XL (oversized)`, `One Size (adjustable)` and others). It wrote a rule with worked examples: split on `/`, ignore notes in parentheses, and match a whole part or a part's first word. That way `M` matches `S/M` but `S` doesn't match `US 9`. The first draft of the `create_fit_card` spec also said captions "vary between runs" because `TEMPERATURE = 0.9`.
+- *What I changed:* The "vary between runs" line was wrong. `CACHE_ENABLED` is on by default, so the same input returns the cached caption. The spec now says captions vary only with `AI201_CACHE=0`, and criterion 4 says the cache is off when it's measured. I also decided that "One Size" listings match every size request, and I wrote that into the rule.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I asked Claude to build `search_listings` to my spec and test it, then wire the loop in `run_agent` with a regex query parser.
+- *What came back:* The search passed every filter test: price ceiling, `[]` for the ballgown query, and no `US 9` for size `S`. But "graphic tee" also returned cargo pants and a plain crewneck. My spec matches keywords as substrings, so "graphic" matched "no graphics" and "tee" matched a description that mentions "a long tee". When it wired the loop, the same substring rule meant any leftover filler word in the parsed description, like "a", "in" or "for", would match every listing and make the empty-search branch impossible to reach.
+- *What I changed:* I added a filler-word list to `parse_query` so the description that reaches the search holds only real keywords ("looking for a vintage graphic tee under $30" → `vintage graphic tee`). I kept substring matching for now because it's what my spec says. The bad ranking is real, though: the top result for "vintage graphic tee" is a butterfly baby tee, not the graphic tee. I'm leaving it as a known weakness to diagnose in unit 4.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
