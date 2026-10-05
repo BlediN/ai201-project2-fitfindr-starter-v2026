@@ -25,6 +25,7 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
+My search is a plain keyword match with no synonyms, so if the query says "tee" and the listing says "t-shirt", the search returns nothing and the run stops at the branch. The query parser can also misread a phrasing and pull out a wrong size or price that filters out the real match. I allow one miss in five for that, and not more, because once a listing is found, the two model tools always return a string by spec, even in their empty cases.
 <!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
      "my search is a plain keyword match and some phrasings will miss" is a
      real answer. -->
@@ -37,6 +38,7 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
+No model is involved before this branch. `search_listings` is deterministic and returns `[]` when nothing matches, and the check in `run_agent` is a plain `if not results`. The same query takes the same path every time, so any miss is a bug in my code, not bad luck. That makes anything less than 5 of 5 wrong. The message is fixed text written in code, so it names what to change every time.
 <!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
      about this path? -->
 
@@ -54,10 +56,13 @@ Given a query that matches no listings, the agent stops before calling
      compares session["selected_item"] against what actually reached
      suggest_outfit is the shape you're after. -->
 
-
+Given a query that matches at least one listing, the `id` of
+`session["selected_item"]` equals the `id` of `session["search_results"][0]`.
+The trace also shows that same `id` going into both `suggest_outfit` and
+`create_fit_card`. All three must match in 5 of 5 tries.
 
 **Why this target:**
-
+Passing the item along is just my code reading and writing dict keys, with no model and nothing random involved. If the ids ever differ, I have a state bug, like overwriting the session or passing the wrong variable, and not a flaky run, so 5 of 5 is the only honest target. Comparing `id` rather than the title is the strict version, because two listings can have similar titles.
 
 
 ---
@@ -75,10 +80,13 @@ Given a query that matches no listings, the agent stops before calling
      sentence? A card longer than a caption anyone would post? Any of those can
      be turned into a number. -->
 
-
+With the cache off (`AI201_CACHE=0`), I generate fit cards for 5 different
+items. At least 4 of the 5 cards are 2–4 sentences long and contain both the
+item's price (e.g. `$24`) and its platform name. No two of the 5 cards
+start with the same opening sentence.
 
 **Why this target:**
-
+The words can change, but the facts can't. A caption with the wrong price or no platform is useless as a post. I allow one miss on length and facts because the model sometimes writes a fifth sentence, or spells a price as "twenty-four bucks", even when the prompt asks for it exactly. The opening-sentence rule has no allowance: the same opening on two different items means the prompt is producing a template, not responding to the item. That doesn't change from run to run, so it's either fixed or it isn't.
 
 
 ---
@@ -92,10 +100,12 @@ Given a query that matches no listings, the agent stops before calling
      search respects a price ceiling — anything, as long as it names a number
      or an observable outcome. -->
 
-
+Given a matching query and the empty wardrobe (`get_empty_wardrobe()`), the
+agent finishes with `session["error"]` set to `None`, a non-empty
+`outfit_suggestion`, and a non-empty `fit_card`, in 5 of 5 tries.
 
 **Why this target:**
-
+The empty wardrobe is a branch inside `suggest_outfit`. My code checks `wardrobe["items"]` and asks the model for general styling advice instead, so whether the run completes depends on my code, not on the model's wording. That's why I set it at 5 of 5, not 4 of 5. I didn't go stricter and require that the advice never mentions an owned piece ("pair it with your black jeans"). Checking that would mean reading every suggestion by hand, and I'd rather have a target I can score the same way every time.
 
 
 ---
