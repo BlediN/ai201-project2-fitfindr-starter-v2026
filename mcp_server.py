@@ -67,28 +67,30 @@ from tools import search_listings as _search_listings_impl  # noqa: F401 — you
 mcp = FastMCP("fitfindr", log_level="WARNING")
 
 
-# ── TODO: uncomment and fill this in ──────────────────────────────────────────
-#
-# @mcp.tool()
-# def search_listings(
-#     description: str,
-#     size: str | None = None,
-#     max_price: float | None = None,
-# ) -> list[dict]:
-#     """
-#     <-- YOUR DESCRIPTION GOES HERE.
-#
-#         One or two sentences. What does this tool do, what does it need, and
-#         what does it give back when it finds nothing? Written for a reader
-#         who cannot see the code.
-#     """
-#     return _search_listings_impl(description, size, max_price)
-#
+@mcp.tool()
+def search_listings(
+    description: str,
+    size: str | None = None,
+    max_price: float | None = None,
+) -> list[dict]:
+    """
+    Search secondhand clothing listings by keywords, with an optional size and
+    price ceiling. `description` is space-separated keywords (e.g. "vintage
+    graphic tee"); `size` is a size label like "M", "W30" or "US 8", matched
+    case-insensitively against whole size parts ("M" matches "S/M", "S" does
+    not match "US 9"); `max_price` is in US dollars, inclusive. Returns up to
+    10 listing dicts (id, title, description, category, style_tags, size,
+    condition, price, colors, brand, platform), best keyword match first.
+    When nothing matches, returns an empty list — never null, never an error.
+    """
+    return _search_listings_impl(description, size, max_price)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# Two notes on the block above.
+# Two notes on the tool above.
 #
-# The registered name is the *function* name — so the block above registers
+# The registered name is the *function* name — so the tool above registers
 # "search_listings", which is exactly what call_tool("search_listings", ...)
 # asks for. That is also why the import at the top of this file brings the real
 # implementation in under an alias: without it, the registered function and the
