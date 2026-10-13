@@ -202,6 +202,18 @@ These broken-in vintage Levi's 501 jeans have that perfect authentic fade you ca
 - *What came back:* The search passed every filter test: price ceiling, `[]` for the ballgown query, and no `US 9` for size `S`. But "graphic tee" also returned cargo pants and a plain crewneck. My spec matches keywords as substrings, so "graphic" matched "no graphics" and "tee" matched a description that mentions "a long tee". When it wired the loop, the same substring rule meant any leftover filler word in the parsed description, like "a", "in" or "for", would match every listing and make the empty-search branch impossible to reach.
 - *What I changed:* I added a filler-word list to `parse_query` so the description that reaches the search holds only real keywords ("looking for a vintage graphic tee under $30" → `vintage graphic tee`). I kept substring matching for now because it's what my spec says. The bad ranking is real, though: the top result for "vintage graphic tee" is a butterfly baby tee, not the graphic tee. I'm leaving it as a known weakness to diagnose in unit 4.
 
+**Moment 3 (unit 4)**
+
+- *What I asked for:* I asked Claude to fix the ranking problem my diagnosis found, where the search picked the wrong listing for "vintage graphic tee" and "green silk shirt".
+- *What came back:* Its first attempt counted title matches double. Before changing the tool, it tested that idea on the diagnosis queries and every scenario query. It fixed the graphic tee only by winning another file-order tie, and "green silk shirt" now picked a green *polo* shirt. It then added weighting by how rare each word is across the listings, and that version picked the right listing for all 15 test queries, with no regressions.
+- *What I changed:* I kept the rarity-plus-title version and updated the Tool Inventory so the spec matches the code. I also recorded that this fix was tuned on the same queries it's scored on (What's Still Broken, item 2). The 5 of 5 doesn't prove the search is better on queries it hasn't seen.
+
+**Moment 4 (unit 4)**
+
+- *What I asked for:* I asked Claude to trigger the three failure modes, then add handlers for any that crashed or went silent.
+- *What came back:* With a bad API key, the app printed a clean `ModelUnavailable:` line and no stack trace, so it looked handled. Claude checked where the message came from: a catch-all `except Exception` in `app.py`'s `main()`, not my agent. `run_agent` was still raising and throwing the session away. Separately, it first told me the search results had changed after my MCP move, then found it had compared two different queries. Re-run properly, all 10 queries were identical over MCP.
+- *What I changed:* I added a `ModelUnavailable` handler in `run_agent` that keeps the found item, names the step that failed, and passes along the fix (check the key, or the model name). I didn't catch `RuntimeError`, because that would hide the runaway-loop error. And I wrote the MCP note from the identical-results check, not from the first claim.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -359,12 +371,13 @@ $ python app.py ask 'designer ballgown size XXS under $5' --trace
       →    branch: empty, stopping before suggest_outfit
 ```
 
-The empty search stops after step 2. The happy path runs all four steps, and the same item id, `lst_002`, appears in the branch note and in the inputs to both `suggest_outfit` and `create_fit_card`.
+The empty search stops after step 2. The happy path runs all four steps, and the same item id, `lst_002`, appears in the branch note and in the inputs to both `suggest_outfit` and `create_fit_card`. (These traces were captured before **The Improvement**. The same query now selects `lst_006`, the Graphic Tee.)
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
 full. -->
+`search_listings` now runs as a tool on an MCP server. `mcp_server.py` registers it and calls the same function in `tools.py`. In `agent.py::run_agent`, the search step calls `call_tool("search_listings", {...})` instead of calling the function directly. Nothing else in the loop changed, and `tools.py` wasn't touched by the move. To check whether anything behaved differently, I ran 10 queries both ways, including the impossible one and one with a size and price. **All 10 returned identical lists:** same listings, same order, `price` still a float, and an empty result still `[]`, so the branch works the same. The one real difference is **speed: about 1.07 s per search over MCP against about 0.001 s direct**, because each call goes out to the server and back. One leftover: `_no_results_message` still calls `search_listings` directly when it re-checks the words without filters, so only the main search goes over MCP.
 
 
 
@@ -453,6 +466,28 @@ this data.
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
+
+**No criterion is still missed:** all five are MET in the after run. That isn't the same as nothing being broken. These are the problems I found and didn't fix, most serious first.
+
+**1. A query for something the data doesn't have can still return an unrelated item.** `wool trench coat` selects the Oversized Flannel Shirt, because "wool" appears in its text and one matching word is enough to get past the empty-search branch. The user gets an outfit and a caption for a shirt they didn't ask for. *What I'd do:* add a second branch after the search. If the top result matches fewer than half the query's keywords, stop with a message like the empty-search one, saying "nothing close to a trench coat; the nearest was a flannel shirt". *Why I stopped:* it's a separate mechanism from the one I fixed. Changing both at once would have made the after run impossible to read. It's also not covered by any criterion, so I'd write one first (for example, "5 queries for items not in the data each stop before `suggest_outfit`, 5 of 5").
+
+**2. My improvement was tuned on the queries it's scored on.** I added the rarity weighting *because* "green silk shirt" still failed with title weighting alone. So criterion 1's 5 of 5 shows the fix works on those five, not that the search is better in general. *What I'd do:* write 5 new queries with obvious right answers, commit the expected ids *before* running them, and score those as well. *Why I stopped:* I noticed this after the after run, at the end of the unit. I'd rather say so than claim more than I measured.
+
+**3. Fit cards are written as the seller.** 32 of 60 cards in the after run say things like "grab it before I change my mind and keep it" or "listing it on my Poshmark", and 14 of 60 open with "Nothing beats…". The prompt asks for a post about a *find*, and the model writes a sales listing. Criterion 4 passes anyway because it checks length, price, platform and whole opening sentences, not voice. *What I'd do:* rewrite the `create_fit_card` prompt to say the user *bought* the item and is showing it off, give one example opening, and ban "change my mind". Then I'd tighten criterion 4 to compare the first three words, not the whole sentence. *Why I stopped:* the unit allows one change, and the wrong item being picked was more serious than the wrong voice.
+
+**4. The parser misreads some ordinary phrasings** (found by testing, and not covered by a criterion):
+- `jeans between $20 and $40` → max price $20
+- `plus size jacket` → size "jacket"
+- `size S/M` → size "S"
+- `size medium` → no match for `M`
+- `under 30 dollars` → no price, and "dollars" becomes a search word
+
+*What I'd do:* handle price ranges, map word sizes (`medium` → `M`), allow `/` in sizes, and only read the word after "size" as a size if it looks like one. *Why I stopped:* none of my criteria test phrasing, so I'd be fixing things I couldn't measure. A criterion like "10 phrasings of the same request select the same listing" would come first.
+
+**5. Smaller gaps:**
+- `run_agent` only catches `ModelUnavailable`. A missing key, or still being rate limited after every retry, raises a `RuntimeError` that only `app.py`'s catch-all handles. I didn't catch `RuntimeError` in the agent because that would also hide the runaway-loop error from `trace.check_iterations`.
+- `suggest_outfit` assumes every wardrobe item has `colors`. An item without it raises `KeyError`. The example wardrobe always has it, but the schema doesn't guarantee it.
+- There are no synonyms. "sweater" finds nothing, even though there are crewneck sweatshirts.
 
 
 
