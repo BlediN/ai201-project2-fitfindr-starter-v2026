@@ -279,14 +279,37 @@ Fit card: Nothing beats the way 501s actually mold to you once they're properly 
 
 | # | Criterion | Target | Verdict | How I decided |
 |---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| 1 | A matching query completes all three tools | 4 of 5 | **MET** (5/5) | All 5 traces show four steps and a non-empty `fit_card`. |
+| 2 | An impossible query stops before the second tool | 5 of 5 | **MET** (5/5) | All 5 traces end after `search_listings`, `fit_card` is `None`, and the message tells the user to use a more general word. |
+| 3 | The same item reaches every tool | 5 of 5 | **MET** (5/5) | `lst_001` appears in the search branch note, the `suggest_outfit` input and the `create_fit_card` input in all 5 traces. |
+| 4 | Fit card: 2–4 sentences, price, platform; no shared opening | 4 of 5, no shared opening | **MET** (5/5) | I read the Try 1 card of each of the 5 items: all are 2–4 sentences with the exact price and the platform, and the 5 opening sentences are all different. All 25 cards also pass when scored one by one. |
+| 5 | The empty wardrobe completes | 5 of 5 | **MET** (5/5) | All 5 runs ended with `error` as `None` and a non-empty suggestion and card. |
 
 **Diagnoses**
 
+**I missed nothing: 25 of 25 tries passed.** Honestly, that says more about my targets than my agent. Three of the five (2, 3, 5) test code paths with no model in them, so they were always going to be 5 of 5 once the code was right. The run output shows problems that none of my criteria catch.
+
+**The criterion I'd tighten is 1, and it's broken, not just easy.** It passed 5 of 5 while the agent picked the **wrong item in every try**. The query was "vintage graphic tee", and all five runs selected `lst_002` "Y2K Baby Tee — Butterfly Print", not `lst_006` "Graphic Tee — 2003 Tour Bootleg Style". The criterion checks that the run *finishes*, and a run that confidently finds the wrong thing still finishes. I revised it in `criteria.md`; the original line is still there. The new version checks whether the agent picked the right listing, for 5 queries that each have one correct answer.
+
+**Scored against the revised criterion 1, the agent misses: 3 of 5.** The selected item depends only on `parse_query` and `search_listings`, with no model involved, so the same query gives the same pick every time and running it once gives the result for all five tries.
+
+| Query | Should pick | Picked | Result |
+|---|---|---|---|
+| `vintage graphic tee under $30` | `lst_006` Graphic Tee — 2003 Tour Bootleg Style | `lst_002` Y2K Baby Tee — Butterfly Print | MISS |
+| `leather jacket` | `lst_022` 90s Leather Bomber — Black | `lst_022` | PASS |
+| `black jeans size W28` | `lst_037` Straight Leg Black Jeans — Faded | `lst_037` | PASS |
+| `green silk shirt` | `lst_029` Silk Button-Down — Sage Green | `lst_013` 90s Silk Slip Dress — Floral | MISS |
+| `canvas sneakers` | `lst_035` Low-Top Canvas Sneakers — Off-White | `lst_035` | PASS |
+
+**Diagnosis: one problem in one tool, `search_listings`, at the scoring step.** The score counts how many query words appear *anywhere* in the listing's text. Every match counts the same, whether it's in the title or buried in the description. So the item the user named and a weaker match end up tied, and `sorted()` breaks ties by file order:
+- `vintage graphic tee`: both tees score **3/3**. The baby tee only has "graphic" because its description says "butterfly graphic", and "vintage" because it's a style tag. `lst_002` comes before `lst_006` in the file, so it wins.
+- `green silk shirt`: both score **2/3** (green, silk). Neither says "shirt", because the right item is titled "Button-Down". `lst_013` comes first, so a dress wins over the shirt.
+
+The loop, the session and the model all did their jobs. They faithfully carried the wrong item forward, which is exactly what criterion 3 says they should do.
+
+**The same mechanism also breaks the empty-search branch.** `wool trench coat` should stop, because there's no coat in the data. Instead it selects `lst_003` "Oversized Flannel Shirt", because the word "wool" appears in its text and **1 match out of 3 is enough** to pass the zero-score filter. The branch only fires when *nothing* matches at all, so a query with one stray match skips it and the run carries on with an unrelated item. That's the same tool with the same weakness: no difference between a strong match and a weak one.
+
+**Two model-output problems no criterion measures yet.** Of the 40 fit cards in the run, **18 are written as the seller** ("grab it before I change my mind and keep it", "listing it on my Poshmark"), and **10 open with "Nothing beats…"**. Criterion 4 passes as written because no two cards share a *whole* opening sentence, but the model leans on one template. If I tightened a second criterion, it would be 4, to compare opening words instead of whole sentences.
 
 
 ---

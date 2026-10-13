@@ -30,6 +30,20 @@ My search is a plain keyword match with no synonyms, so if the query says "tee" 
      "my search is a plain keyword match and some phrasings will miss" is a
      real answer. -->
 
+> **Revised in unit 4:** For 5 queries that each name one specific listing,
+> the agent's `selected_item` is that listing in at least 4 of 5. The queries
+> and their correct answers: `vintage graphic tee under $30` → `lst_006`,
+> `leather jacket` → `lst_022`, `black jeans size W28` → `lst_037`,
+> `green silk shirt` → `lst_029`, `canvas sneakers` → `lst_035`.
+>
+> **Why revised:** The original measured the wrong thing. It passed 5 of 5
+> while the agent picked the wrong item every time: "vintage graphic tee"
+> selected the Y2K Baby Tee, not the Graphic Tee. "Completes all three tools"
+> is true of a run that finds the wrong thing, so the criterion couldn't tell a
+> working search from a broken one. The new version checks the item against a
+> known correct answer, which I can score. I kept 4 of 5 for the same reason
+> as before: plain keyword matching will miss some phrasings.
+
 ---
 
 ## 2. An impossible query stops before the second tool
