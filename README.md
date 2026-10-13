@@ -283,14 +283,36 @@ that produced it:
 **Happy path**
 
 ```
-
+$ python app.py ask 'vintage graphic tee under $30' --trace
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: description='vintage graphic tee', size=None, max_price=30.0
+[2] search_listings (via MCP)
+      in:  description='vintage graphic tee', size=None, max_price=30.0
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected Y2K Baby Tee — Butterfly Print [lst_002]
+[3] suggest_outfit
+      in:  new_item=Y2K Baby Tee — Butterfly Print [lst_002], wardrobe=10 items
+      out: Outfit 1: Pair the Y2K Baby Tee with the baggy straight-leg jeans, dark wash, vintage black denim jacket, and …
+[4] create_fit_card
+      in:  outfit=<243 chars>, new_item=Y2K Baby Tee — Butterfly Print [lst_002]
+      out: That little butterfly graphic takes me straight back to 2003 in the best way possible. I love how it balances …
 ```
 
 **Empty search**
 
 ```
-
+$ python app.py ask 'designer ballgown size XXS under $5' --trace
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: description='designer ballgown', size='XXS', max_price=5.0
+[2] search_listings (via MCP)
+      in:  description='designer ballgown', size='XXS', max_price=5.0
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
 ```
+
+The empty search stops after step 2. The happy path runs all four steps, and the same item id, `lst_002`, appears in the branch note and in the inputs to both `suggest_outfit` and `create_fit_card`.
 
 **On the MCP move:** <!-- what changed in your code, and whether anything
 behaved differently afterwards. If the rewire didn't work, say exactly where it

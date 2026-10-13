@@ -110,8 +110,31 @@ def run_agent(query: str, wardrobe: dict) -> dict:
     """
     session = new_session(query, wardrobe)
 
-    # Each pass runs one step, then picks the next step from what that step
-    # put in the session. Every tool reads its inputs back out of the session.
+    try:
+        _loop(session)
+    except ModelUnavailable as exc:
+        # Only suggest_outfit and create_fit_card call the model, so the search
+        # has already run. Keep what was found, and say which step failed.
+        item = session["selected_item"]
+        if session["outfit_suggestion"] is None:
+            tool, failed = "suggest_outfit", "suggest an outfit"
+        else:
+            tool, failed = "create_fit_card", "write the fit card"
+        trace.step(tool, inputs=_fmt_item(item), note=f"ModelUnavailable: {exc}")
+        session["error"] = (
+            f"Found {item['title']} (${item['price']:g} on {item['platform']}), "
+            f"but couldn't reach the model to {failed}. {exc} "
+            f"Once that's fixed, run the same query again."
+        )
+    return session
+
+
+def _loop(session: dict) -> None:
+    """
+    The steps of run_agent. Each pass runs one step, then picks the next step
+    from what that step put in the session. Every tool reads its inputs back
+    out of the session. Raises ModelUnavailable if the model can't be reached.
+    """
     next_step = "parse"
     count = 0
     while next_step != "done":
@@ -120,6 +143,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         if next_step == "parse":
             session["parsed"] = parse_query(session["query"])
+            trace.step("parse_query", inputs=session["query"],
+                       returned=_fmt_parsed(session["parsed"]))
             next_step = "search"
 
         elif next_step == "search":
@@ -134,23 +159,43 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             if not session["search_results"]:
                 session["error"] = _no_results_message(parsed)
                 next_step = "done"
+                note = "branch: empty, stopping before suggest_outfit"
             else:
                 session["selected_item"] = session["search_results"][0]
                 next_step = "suggest"
+                note = f"branch: selected {_fmt_item(session['selected_item'])}"
+            trace.step("search_listings (via MCP)", inputs=_fmt_parsed(parsed),
+                       returned=session["search_results"], note=note)
 
         elif next_step == "suggest":
             session["outfit_suggestion"] = suggest_outfit(
                 session["selected_item"], session["wardrobe"]
             )
+            items = len(session["wardrobe"].get("items") or [])
+            trace.step("suggest_outfit",
+                       inputs=f"new_item={_fmt_item(session['selected_item'])}, wardrobe={items} items",
+                       returned=session["outfit_suggestion"])
             next_step = "card"
 
         elif next_step == "card":
             session["fit_card"] = create_fit_card(
                 session["outfit_suggestion"], session["selected_item"]
             )
+            trace.step("create_fit_card",
+                       inputs=f"outfit=<{len(session['outfit_suggestion'])} chars>, "
+                              f"new_item={_fmt_item(session['selected_item'])}",
+                       returned=session["fit_card"])
             next_step = "done"
 
-    return session
+
+def _fmt_parsed(parsed: dict) -> str:
+    return (f"description={parsed['description']!r}, size={parsed['size']!r}, "
+            f"max_price={parsed['max_price']!r}")
+
+
+def _fmt_item(item: dict) -> str:
+    """Title and id, so the trace shows the same item reaching every tool."""
+    return f"{item['title']} [{item['id']}]"
 
 
 # ── query parsing ─────────────────────────────────────────────────────────────
