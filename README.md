@@ -67,6 +67,7 @@ FitFindr helps someone shop secondhand clothing listings (Depop, thredUp and Pos
   - `max_price` (float or None): the price ceiling, inclusive (`price <= max_price`). `None` skips price filtering.
 - **Returns:** A `list[dict]` of at most `config.SEARCH_RESULT_LIMIT` (10) listing dicts, highest score first. Ties keep the order they have in the file. Each dict is the full listing, unchanged: `id` (str), `title` (str), `description` (str), `category` (str), `style_tags` (list of str), `size` (str), `condition` (str), `price` (float), `colors` (list of str), `brand` (str or None, and usually None), `platform` (str).
   - **Score:** lowercase the description and split it on whitespace into keywords. A listing's score is the number of those keywords found in its combined `title`, `description`, `category`, `style_tags`, `colors` and `brand` (lowercased). Listings that score 0 are dropped.
+  - **Score, revised in unit 4:** each keyword found in the listing adds its *weight*, doubled if the keyword is in the `title`. A keyword's weight is `log(1 + N / n)`, where N is the number of listings and n is how many of them contain the word, so rare words like "silk" count more than common ones like "vintage". Weights are counted over all listings, before any filtering. Listings that score 0 are still dropped, and ties still keep file order.
   - **Size match:** lowercase both sizes, delete anything in parentheses from the listing's size, and split it on `/` into parts, stripping the spaces around each part. It matches if the requested size equals a whole part, or equals the first word of a part. Listings sized `one size` match every request. So `M` matches `S/M` and `M/L`; `L` matches `L/XL` but not `XL`; `W30` matches `W30 L30`; `S` does **not** match `US 9`; `US 8` does **not** match `US 8.5`.
 - **When it has nothing:** It returns an empty list `[]`. Never `None`, and never an exception.
 
@@ -376,25 +377,73 @@ full. -->
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** The scoring step inside `tools.py::search_listings`, and nothing else. Before, a listing scored 1 point for every query word found anywhere in its text. Now each matched word is worth more when it's **rare** across the listings (`_keyword_weights`, weight `log(1 + N / n)`), and **double** when it's in the title. The loop, the session, the prompts and the empty-search branch are all unchanged.
 
-**Which failure it was meant to fix:**
+**Which failure it was meant to fix:** Revised criterion 1, which scored 3 of 5 because the search picked the wrong listing for "vintage graphic tee" and "green silk shirt". The diagnosis traced both misses to one mechanism. Every match counted the same, so the listing the user named tied with one that only *mentioned* the words ("butterfly graphic" in a description, "vintage" as a style tag), and file order broke the tie. Title weighting alone fixed the tee but still lost "green silk shirt" to a green *polo shirt* in another tie. Weighting by rarity is what separates them: "silk" is in 2 listings and "shirt" is in many.
+
+Before running the eval, I checked the change on the search alone, through the same MCP path the agent uses:
+- All 5 revised criterion 1 queries now pick the correct listing.
+- All 8 other scenario queries still pick the same item as before.
+- The impossible query still returns `[]`.
+
+**Deliberately not fixed:** `wool trench coat` still selects the flannel shirt, because one stray word match is enough to get past the branch. That's a different problem: a second branch, or a minimum score, would fix it. I left it alone so this run measures one change.
 
 ### Run Log — After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. (revised) The right listing is selected | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The same item reaches every tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card: 2–4 sentences, price, platform; no shared opening | 4 of 5, and no shared opening | PASS | PASS | PASS | PASS | PASS | MET (5/5, 5 distinct openings) |
+| 5. The empty wardrobe completes | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+Full log: `results/run_2026-10-12_2341_after.md`. For criterion 1, Try 1–5
+are the five revised queries, and every one of their 25 tries picked the
+expected id. For criterion 4, Try 1–5 are the five items, as in the before
+run.
+
+### Before and after, side by side
+
+| Criterion | Before (`run_2026-10-12_2309_before.md`) | After (`run_2026-10-12_2341_after.md`) | Changed? |
+|---|---|---|---|
+| 1. A matching query completes (original) | MET 5/5, but picked the wrong tee every time | MET 25/25 | — |
+| 1. The right listing is selected (revised) | **MISSED 3/5**: graphic tee → baby tee, green silk shirt → slip dress | **MET 5/5**, all five correct | **Yes, fixed** |
+| 2. An impossible query stops early | MET 5/5 | MET 5/5 | No |
+| 3. The same item reaches every tool | MET 5/5 (`lst_001`) | MET 5/5 (`lst_001`) | No |
+| 4. Fit card | MET 5/5 | MET 5/5 | No |
+| 5. The empty wardrobe completes | MET 5/5 | MET 5/5 | No |
+
+**Where the "before 3/5" for revised criterion 1 comes from.** The before run
+didn't contain those five queries, because I wrote the revised criterion
+after it. I scored them on the unchanged code by calling
+`parse_query` → `search_listings` directly. That's a fair stand-in: which
+item gets picked doesn't involve the model, so every try gives the same
+answer. The after run confirms that, with the same pick in all 5 tries of each
+query.
 
 **Did it help, and how do I know:**
 
-<!-- If it made things worse, say that. Honestly reported, that earns full
-     credit and is more interesting than one that worked. -->
+**Yes, for what it targeted.** Revised criterion 1 went from **3 of 5
+(MISSED) to 5 of 5 (MET)**. Both misses are fixed, and you can see it in the
+trace's branch note:
+- `vintage graphic tee under $30` now selects `lst_006` "Graphic Tee — 2003 Tour Bootleg Style" (was `lst_002`, the baby tee).
+- `green silk shirt` now selects `lst_029` "Silk Button-Down — Sage Green" (was `lst_013`, a slip dress).
 
+**Nothing else got worse.** Criteria 2–5 are still 5 of 5. The criterion 3 and
+4 scenarios and the empty-wardrobe scenario selected the same listings as in
+the before run: `lst_001`, `lst_013`, `lst_019`, `lst_004`, `lst_008`,
+`lst_018` and `lst_007`. The impossible query still returns `[]` and stops.
+
+**What it didn't fix, and wasn't meant to:**
+- `wool trench coat` still selects the flannel shirt. One stray word match still gets a run past the empty-search branch. Better scoring makes the *order* right, but it can't make an irrelevant result disappear. That needs a second branch or a minimum score.
+- The fit cards are no better. Seller voice is in 32 of 60 cards (53%, was 18 of 40, 45%), and "Nothing beats…" openings are in 14 of 60 (23%, was 10 of 40, 25%). The small changes are run-to-run variation in the model, not an effect of my change. Three of criterion 4's five Try 1 cards begin "Nothing beats", which passes the criterion's "no shared opening *sentence*" but shows the template. No prompt changed, so this is expected, and it's the next thing I'd fix.
+
+**One honest caveat about the improvement.** The weights come from these 40
+listings. "Silk" is rare *here*. With a different catalogue, the same query
+could rank differently. The fix makes the search reward distinctive words in
+the title, which is the right idea in general, but I've only measured it on
+this data.
 
 
 ---

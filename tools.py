@@ -20,6 +20,7 @@ That last line is what your loop branches on. "Returns a list" earns nothing —
 the description has to say what is *in* the list.
 """
 
+import math
 import re
 
 import config
@@ -80,7 +81,8 @@ def search_listings(
     Test it from a terminal before you move on:
         python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
     """
-    listings = load_listings()
+    all_listings = load_listings()
+    listings = all_listings
 
     if max_price is not None:
         listings = [l for l in listings if l["price"] <= max_price]
@@ -89,16 +91,40 @@ def search_listings(
         listings = [l for l in listings if _size_matches(size, l["size"])]
 
     keywords = description.lower().split()
+    weights = _keyword_weights(keywords, all_listings)
     scored = []
     for listing in listings:
         text = _searchable_text(listing)
-        score = sum(1 for word in keywords if word in text)
+        title = listing["title"].lower()
+        # A keyword in the title counts double: the title is what the listing
+        # IS, the description only mentions things ("butterfly graphic").
+        score = sum(
+            weights[word] * (2 if word in title else 1)
+            for word in keywords
+            if word in text
+        )
         if score > 0:
             scored.append((score, listing))
 
     # sorted() is stable, so ties keep the order they have in the file.
     scored = sorted(scored, key=lambda pair: pair[0], reverse=True)
     return [listing for _, listing in scored[: config.SEARCH_RESULT_LIMIT]]
+
+
+def _keyword_weights(keywords: list[str], listings: list[dict]) -> dict[str, float]:
+    """
+    Rarer words count for more. "silk" appears in 2 listings and "shirt" in
+    many, so for "green silk shirt" a silk match says more about what the user
+    wants. Weight = log(1 + N / listings containing the word). Counted over
+    every listing, not just the ones left after filtering, so a word's weight
+    doesn't change with the price or size asked for.
+    """
+    texts = [_searchable_text(l) for l in listings]
+    weights = {}
+    for word in keywords:
+        containing = sum(1 for text in texts if word in text)
+        weights[word] = math.log(1 + len(texts) / containing) if containing else 0.0
+    return weights
 
 
 def _searchable_text(listing: dict) -> str:

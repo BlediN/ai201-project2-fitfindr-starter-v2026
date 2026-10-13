@@ -14,10 +14,38 @@ own criteria need — these are a starting point, not a fixed set.
 """
 
 SCENARIOS = [
+    # Criterion 1, as revised in unit 4: 5 queries that each name one specific
+    # listing. In the README row, Try 1..5 = queries 1..5, and a query PASSES
+    # when the trace's branch note shows the expected id. The pick comes from
+    # parse_query + search_listings only, with no model, so it can't vary
+    # between tries. The other 4 tries of each query just confirm that.
     {
-        # A query the data can match. Criterion 1.
-        "name": "matching query completes",
+        "name": "right item: graphic tee (want lst_006)",
         "query": "vintage graphic tee under $30",
+        "wardrobe": "example",
+        "criterion": 1,
+    },
+    {
+        "name": "right item: leather jacket (want lst_022)",
+        "query": "leather jacket",
+        "wardrobe": "example",
+        "criterion": 1,
+    },
+    {
+        "name": "right item: black jeans (want lst_037)",
+        "query": "black jeans size W28",
+        "wardrobe": "example",
+        "criterion": 1,
+    },
+    {
+        "name": "right item: green silk shirt (want lst_029)",
+        "query": "green silk shirt",
+        "wardrobe": "example",
+        "criterion": 1,
+    },
+    {
+        "name": "right item: canvas sneakers (want lst_035)",
+        "query": "canvas sneakers",
         "wardrobe": "example",
         "criterion": 1,
     },
