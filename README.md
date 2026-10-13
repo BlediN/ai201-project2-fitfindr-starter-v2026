@@ -221,17 +221,40 @@ These broken-in vintage Levi's 501 jeans have that perfect authentic fade you ca
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 |---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| 1. A matching query completes all three tools | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The same item reaches every tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 4. Fit card: 2–4 sentences, price, platform; no shared opening | 4 of 5, and no shared opening | PASS | PASS | PASS | PASS | PASS | MET (5/5, 5 distinct openings) |
+| 5. The empty wardrobe completes | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+
+Full log: `results/run_2026-10-12_2309_before.md`. For criterion 4, Try 1–5
+are five **different items**: slip dress, platform sneakers, track jacket,
+knit cardigan, linen blazer. I used the Try 1 card of each, because the
+criterion is about five cards for five items. Scored on its own, every one of
+the 25 cards those scenarios produced also passes.
 
 **Real output from one try**, pasted as text, naming the file and function
-that produced it:
+that produced it. Criterion 3, try 1, produced by `agent.py::run_agent` and
+logged by `run_eval.py::main`:
 
 ```
+query: jeans size W30 under $40   (example wardrobe)
 
+[1] parse_query
+      in:  jeans size W30 under $40
+      out: description='jeans', size='W30', max_price=40.0
+[2] search_listings (via MCP)
+      in:  description='jeans', size='W30', max_price=40.0
+      out: 1 items: Vintage Levi's 501 Jeans — Medium Wash
+      →    branch: selected Vintage Levi's 501 Jeans — Medium Wash [lst_001]
+[3] suggest_outfit
+      in:  new_item=Vintage Levi's 501 Jeans — Medium Wash [lst_001], wardrobe=10 items
+      out: Outfit 1: Pair the Vintage Levi's 501 Jeans with the White ribbed tank top, the Vintage black denim jacket, an…
+[4] create_fit_card
+      in:  outfit=<328 chars>, new_item=Vintage Levi's 501 Jeans — Medium Wash [lst_001]
+      out: Nothing beats the way 501s actually mold to you once they're properly broken in. These medium wash gems have t…
+
+Fit card: Nothing beats the way 501s actually mold to you once they're properly broken in. These medium wash gems have that effortless 90s off-duty model vibe, especially paired with an oversized crewneck and chunky boots. Grab them for $38 over on my depop before I change my mind and keep them. 👖✨
 ```
 
 ---

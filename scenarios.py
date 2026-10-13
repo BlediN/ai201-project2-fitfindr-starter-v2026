@@ -29,24 +29,66 @@ SCENARIOS = [
         "criterion": 2,
     },
     {
-        # A user with nothing saved. One of unit 4's three failure modes.
-        "name": "empty wardrobe",
+        # Criterion 3 — state. A query that uses all three parsed fields, so a
+        # size or price lost between steps would show. PASS when the trace shows
+        # the same id in the search_listings branch note, the suggest_outfit
+        # input and the create_fit_card input (expected: lst_001).
+        "name": "same item reaches every tool",
+        "query": "jeans size W30 under $40",
+        "wardrobe": "example",
+        "criterion": 3,
+    },
+    # Criterion 4 — the fit card, for 5 DIFFERENT items. The criterion is about
+    # five cards for five items, so it's scored across these five scenarios:
+    # in the README row, Try 1..5 = Try 1 of item 1..5. A card PASSES when it
+    # is 2–4 sentences and has the exact price and the platform name. Then
+    # check that no two of the five share an opening sentence.
+    # The five cover all three platforms, branded and unbranded items, and
+    # four categories.
+    {
+        # lst_013 — $30, depop, no brand, dress
+        "name": "fit card: item 1 (slip dress)",
+        "query": "silk slip dress under $40",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # lst_019 — $48, poshmark, no brand, shoes
+        "name": "fit card: item 2 (platform sneakers)",
+        "query": "platform sneakers size 8",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # lst_004 — $45, poshmark, Champion, outerwear
+        "name": "fit card: item 3 (track jacket)",
+        "query": "90s track jacket in size M",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # lst_008 — $35, depop, no brand, knitwear
+        "name": "fit card: item 4 (knit cardigan)",
+        "query": "chunky knit cardigan",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # lst_018 — $38, thredUp, no brand, outerwear
+        "name": "fit card: item 5 (linen blazer)",
+        "query": "linen blazer",
+        "wardrobe": "example",
+        "criterion": 4,
+    },
+    {
+        # Criterion 5 — a user with nothing saved. One of unit 4's three
+        # failure modes. PASS when error is None and both outfit_suggestion
+        # and fit_card are non-empty.
+        "name": "empty wardrobe completes",
         "query": "denim jacket under $50",
         "wardrobe": "empty",
-        "criterion": None,
+        "criterion": 5,
     },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
 ]
 
 WARDROBES = ("example", "empty")
